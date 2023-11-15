@@ -1,26 +1,21 @@
 use anyhow::Result;
 use itertools::Itertools;
-use rusqlite::{self, params, params_from_iter};
+use rusqlite;
 use std::fs;
 
 struct ImportOp {
-    content: String,
     connection: rusqlite::Connection,
 }
 
 impl ImportOp {
-    pub fn new(filepath: &str) -> Self {
-        let content = fs::read_to_string(filepath).unwrap();
+    pub fn new() -> Self {
         let connection = rusqlite::Connection::open("db.db").unwrap();
 
-        ImportOp {
-            content,
-            connection,
-        }
+        ImportOp { connection }
     }
 
-    pub fn parse(&self) -> Result<()> {
-        let mut lines = self.content.split("\n").peekable();
+    pub fn parse(&mut self, content: String) -> Result<()> {
+        let mut lines = content.split("\n").peekable();
 
         while let Some(&lpeak) = lines.by_ref().peek() {
             if lpeak.starts_with("--") || lpeak.is_empty() {
@@ -38,7 +33,6 @@ impl ImportOp {
                 self.create_table(&fragment)?;
             } else if fragment.starts_with("copy") {
                 self.copy_to_table(&fragment, lines.by_ref())?;
-                // break;
             } else {
                 // println!("skipping {:?}", fragment);
                 continue;
@@ -89,7 +83,8 @@ impl ImportOp {
                 .filter(|c| !['\'', '"', '[', ']'].contains(&c))
                 .collect();
 
-            // skip until comma or end of statement
+            // skip until comma or end of statement, this is the type def
+            // TODO: add typedef to schema
             let _type: String = it.by_ref().take_while(|&c| c != ',').collect();
 
             // println!("{:?} has type {:?}", col_name, _type);
@@ -112,7 +107,7 @@ impl ImportOp {
     }
 
     fn copy_to_table<'a>(
-        &self,
+        &mut self,
         fragment: &String,
         lines: &mut impl Iterator<Item = &'a str>,
     ) -> Result<()> {
@@ -156,7 +151,8 @@ impl ImportOp {
         );
         println!("{stmt:?}");
 
-        let mut prepared_insert = self.connection.prepare(&stmt)?;
+        let txn = self.connection.transaction()?;
+        let mut prepared_insert = txn.prepare(&stmt)?;
 
         let data_rows = lines.take_while(|&l| l != r"\.").map(|entry| {
             entry
@@ -170,28 +166,31 @@ impl ImportOp {
                 })
                 .collect::<Vec<_>>()
         });
-        // .collect::<Vec<_>>();
 
+        // TODO: print first row
         // println!("data rows: {:?}", data_rows.get(0));
 
         let mut rows_affected = 0;
         for row in data_rows {
-            rows_affected += prepared_insert.execute(params_from_iter(row))?;
+            rows_affected += prepared_insert.execute(rusqlite::params_from_iter(row))?;
         }
-        if rows_affected == 0 {
-            println!("no rows");
-        }
+        println!("rows affected: {rows_affected}");
+
+        drop(prepared_insert);
+        txn.commit()?;
 
         Ok(())
     }
 }
 
 fn main() -> Result<()> {
-    let import_op = ImportOp::new("dump.sql");
+    // TODO: don't read the whole file but use an interator
+    let content = fs::read_to_string("dump.sql").unwrap();
+    let mut import_op = ImportOp::new();
 
     println!("start");
 
-    import_op.parse()?;
+    import_op.parse(content)?;
 
     Ok(())
 }
