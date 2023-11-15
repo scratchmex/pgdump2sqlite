@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::Parser;
 use itertools::Itertools;
 use rusqlite;
 use std::fs;
@@ -8,8 +9,8 @@ struct ImportOp {
 }
 
 impl ImportOp {
-    pub fn new() -> Self {
-        let connection = rusqlite::Connection::open("db.db").unwrap();
+    pub fn new<P: AsRef<std::path::Path>>(sqlite_filename: P) -> Self {
+        let connection = rusqlite::Connection::open(sqlite_filename).unwrap();
 
         ImportOp { connection }
     }
@@ -178,10 +179,17 @@ impl ImportOp {
     }
 }
 
+#[derive(clap::Parser)]
+struct Cli {
+    pgdump_filename: std::path::PathBuf,
+    sqlite_filename: std::path::PathBuf,
+}
+
 fn main() -> Result<()> {
-    // TODO: don't read the whole file but use an interator
-    let content = fs::read_to_string("dump.sql").unwrap();
-    let mut import_op = ImportOp::new();
+    let args = Cli::parse();
+    // TODO: don't read the whole file but use an buffered line interator
+    let content = fs::read_to_string(args.pgdump_filename).unwrap();
+    let mut import_op = ImportOp::new(args.sqlite_filename);
 
     println!("start");
 
