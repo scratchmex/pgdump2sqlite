@@ -26,12 +26,11 @@ impl ImportOp {
             let fragment = lines
                 .by_ref()
                 .take_while_inclusive(|l| !l.ends_with(";"))
-                .collect::<String>()
-                .to_lowercase();
+                .collect::<String>();
 
-            if fragment.starts_with("create table") {
+            if fragment.to_lowercase().starts_with("create table") {
                 self.create_table(&fragment)?;
-            } else if fragment.starts_with("copy") {
+            } else if fragment.to_lowercase().starts_with("copy") {
                 self.copy_to_table(&fragment, lines.by_ref())?;
             } else {
                 // println!("skipping {:?}", fragment);
@@ -43,11 +42,10 @@ impl ImportOp {
     }
 
     fn create_table(&self, fragment: &String) -> Result<()> {
-        // skip header
+        // "strip" the 'create table' statement
         let mut it = fragment
-            .strip_prefix("create table")
-            .expect(&format!("not a create table?: {}", fragment))
             .chars()
+            .skip("create table".len())
             .skip_while(|c| c.is_whitespace())
             .peekable();
 
@@ -59,7 +57,7 @@ impl ImportOp {
             .filter(|c| !['\'', '"', '[', ']'].contains(&c))
             .collect();
 
-        println!("table name: {:?}", table_name);
+        // println!("table name: {:?}", table_name);
 
         it.by_ref()
             .take_while(|&c| c.is_whitespace())
@@ -92,7 +90,7 @@ impl ImportOp {
             col_names.push(col_name);
         }
 
-        println!("col_names: {:?}", col_names);
+        // println!("col_names: {:?}", col_names);
 
         // create table [{tablename}] ( [{col1}], [{col2}], ... )
         let stmt = format!(
@@ -111,11 +109,8 @@ impl ImportOp {
         fragment: &String,
         lines: &mut impl Iterator<Item = &'a str>,
     ) -> Result<()> {
-        let mut it = fragment
-            .strip_prefix("copy")
-            .expect(&format!("not copy?: {}", fragment))
-            .chars()
-            .peekable();
+        // "strip" the copy statement
+        let mut it = fragment.chars().skip("copy".len()).peekable();
 
         // extract table name
         let table_name = it
@@ -125,7 +120,7 @@ impl ImportOp {
             .collect::<String>();
         let table_name = table_name.trim();
 
-        println!("table_name: {:?}", table_name);
+        // println!("table name: {:?}", table_name);
 
         // we parse the cols from statement be aware of the col order
         let col_names = it
@@ -141,7 +136,7 @@ impl ImportOp {
             })
             .collect::<Vec<String>>();
 
-        println!("ncols: {}", col_names.len());
+        // println!("ncols: {}", col_names.len());
 
         // insert into [{table_name}] ( [{col1}], [{col2}], ... ) values ( ?, ?, ... )
         let stmt = format!(
@@ -174,7 +169,7 @@ impl ImportOp {
         for row in data_rows {
             rows_affected += prepared_insert.execute(rusqlite::params_from_iter(row))?;
         }
-        println!("rows affected: {rows_affected}");
+        println!("^^ rows affected: {rows_affected}");
 
         drop(prepared_insert);
         txn.commit()?;
