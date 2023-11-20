@@ -154,6 +154,7 @@ fn parse_stmt(pair: Pair<Rule>) -> Result<Option<Statement>> {
 }
 
 pub fn parse_dump(input: &'_ str) -> Result<Vec<Statement>> {
+    println!("parsing dump");
     let main = PgdumpParser::parse(Rule::main, &input).expect("parse failed");
 
     let stmts = main

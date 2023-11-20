@@ -125,7 +125,7 @@ fn get_rows_for_copy<P: AsRef<std::path::Path>>(
 }
 fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
     stmts: Vec<&Statement>,
-    dump_context: DumpContext<P>,
+    dump_context: &DumpContext<P>,
     sqlite_path: P,
 ) -> Result<()> {
     ensure!(stmts.iter().all(|x| matches!(x, Statement::Copy(_))));
@@ -151,11 +151,31 @@ fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
     Ok(())
 }
 
-pub fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path: P) -> Result<()> {
-    let input = std::fs::read_to_string(&sql_file).context("reading sql file")?;
+pub fn import_from_file<P: AsRef<std::path::Path>>(file: P, sqlite_path: P) -> Result<()> {
+    let extension = file
+        .as_ref()
+        .extension()
+        .expect("cannot get extension of file")
+        .to_str()
+        .expect("invalid extension?");
 
-    println!("parsing dump");
+    let dump_context = match extension {
+        "tar" => DumpContext::Tar { tar_filepath: file },
+        "sql" => DumpContext::Plain { sql_filepath: file },
+        _ => anyhow::bail!("unsupported file extension: {}", extension),
+    };
+
+    let input = match &dump_context {
+        DumpContext::Plain { sql_filepath: file } => {
+            std::fs::read_to_string(&file).context("reading sql file")?
+        }
+        DumpContext::Tar { tar_filepath: file } => todo!(),
+    };
+
     let stmts = parser::parse_dump(&input).context("parsing dump")?;
+
+    println!("importing");
+    // TODO: probably only do one connection here instead of 2?
 
     println!("creating tables");
     create_tables_in_sqlite(
@@ -172,10 +192,8 @@ pub fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path:
             .iter()
             .filter(|x| matches!(x, Statement::Copy(_)))
             .collect_vec(),
-        DumpContext::Plain {
-            sql_filepath: &sql_file,
-        },
-        &sqlite_path,
+        &dump_context,
+        sqlite_path,
     )?;
 
     Ok(())
@@ -187,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_import_from_sql_file_works() -> Result<()> {
-        import_from_sql_file("dump.sql", "test.db")?;
+        import_from_file("dump.sql", "test.db")?;
 
         assert!(false);
         Ok(())
