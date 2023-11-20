@@ -198,7 +198,7 @@ active boolean NOT NULL,
                 .columns
                 .iter()
                 .map(|x| &x.name)
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             ["id", "date", "turn", "role", "active", "userId"]
         );
 
@@ -207,7 +207,7 @@ active boolean NOT NULL,
                 .columns
                 .iter()
                 .map(|x| &x.dtype)
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             [
                 &ColumnType::Integer,
                 &ColumnType::String,
