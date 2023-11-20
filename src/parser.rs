@@ -7,12 +7,6 @@ use pest_derive::Parser;
 #[grammar = "pgdump.pest"]
 struct PgdumpParser;
 
-impl PgdumpParser {
-    fn new() -> Self {
-        Self {}
-    }
-}
-
 fn parse_value(pair: Pair<Rule>) -> Result<String> {
     ensure!(pair.as_rule() == Rule::value);
 
@@ -37,14 +31,15 @@ fn parse_value(pair: Pair<Rule>) -> Result<String> {
 }
 
 #[derive(Debug, PartialEq)]
-enum ColumnType {
+pub enum ColumnType {
     Integer,
     String,
+    Boolean,
 }
 
-struct Column {
-    name: String,
-    dtype: ColumnType,
+pub struct Column {
+    pub name: String,
+    pub dtype: ColumnType,
 }
 
 fn parse_column_def(pair: Pair<Rule>) -> Result<Column> {
@@ -66,6 +61,7 @@ fn parse_column_def(pair: Pair<Rule>) -> Result<Column> {
         name: column_name,
         dtype: match column_type {
             "integer" => ColumnType::Integer,
+            "boolean" => ColumnType::Boolean,
             _ => ColumnType::String,
         },
     })
@@ -85,8 +81,8 @@ fn parse_table_def(pair: Pair<Rule>) -> Result<String> {
 }
 
 pub struct CreateTable {
-    name: String,
-    columns: Vec<Column>,
+    pub name: String,
+    pub columns: Vec<Column>,
 }
 
 fn parse_create_table_stmt(pair: Pair<Rule>) -> Result<CreateTable> {
@@ -112,9 +108,9 @@ fn parse_create_table_stmt(pair: Pair<Rule>) -> Result<CreateTable> {
 }
 
 pub struct CopyTable {
-    name: String,
-    columns: Vec<String>,
-    from: String,
+    pub name: String,
+    pub columns: Vec<String>,
+    pub from: String,
 }
 
 fn parse_copy_stmt(pair: Pair<Rule>) -> Result<CopyTable> {
@@ -178,6 +174,7 @@ id integer NOT NULL,
 date timestamp without time zone DEFAULT now() NOT NULL,
 turn public.session_turn_enum NOT NULL,
 role public.user_role_enum DEFAULT 'other'::public.user_role_enum NOT NULL,
+active boolean NOT NULL,
 "userId" integer
 );
 "#;
@@ -202,7 +199,7 @@ role public.user_role_enum DEFAULT 'other'::public.user_role_enum NOT NULL,
                 .iter()
                 .map(|x| &x.name)
                 .collect::<Vec<_>>(),
-            ["id", "date", "turn", "role", "userId"]
+            ["id", "date", "turn", "role", "active", "userId"]
         );
 
         assert_eq!(
@@ -216,6 +213,7 @@ role public.user_role_enum DEFAULT 'other'::public.user_role_enum NOT NULL,
                 &ColumnType::String,
                 &ColumnType::String,
                 &ColumnType::String,
+                &ColumnType::Boolean,
                 &ColumnType::Integer
             ]
         );
