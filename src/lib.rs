@@ -1,3 +1,7 @@
+mod parser;
+
+use std::fs;
+
 use anyhow::Result;
 use itertools::Itertools;
 use rusqlite;
@@ -7,14 +11,14 @@ pub struct ImportOp {
 }
 
 impl ImportOp {
-    pub fn new<P: AsRef<std::path::Path>>(sqlite_filename: P) -> Self {
-        let connection = rusqlite::Connection::open(sqlite_filename).unwrap();
+    pub fn new<P: AsRef<std::path::Path>>(sqlite_filename: P) -> Result<Self> {
+        let connection = rusqlite::Connection::open(sqlite_filename)?;
 
-        ImportOp { connection }
+        Ok(ImportOp { connection })
     }
 
     pub fn parse(&mut self, content: String) -> Result<()> {
-        let mut lines = content.split("\n").peekable();
+        let mut lines = content.lines().peekable();
 
         while let Some(&lpeak) = lines.by_ref().peek() {
             if lpeak.starts_with("--") || lpeak.is_empty() {
@@ -108,6 +112,14 @@ impl ImportOp {
         fragment: &String,
         lines: &mut impl Iterator<Item = &'a str>,
     ) -> Result<()> {
+        /*
+        COPY <table_name> (<cols, >) FROM stdin;
+        <d1\t...>
+        \.
+
+        COPY <table_name> (<cols, >) FROM '$$PATH$$/<file>.dat';
+        */
+
         // "strip" the copy statement
         let mut it = fragment.chars().skip("copy".len()).peekable();
 
@@ -145,10 +157,25 @@ impl ImportOp {
         );
         println!("{stmt:?}");
 
+        // read from stdin or file
+        let from_part = it.collect::<String>();
+        let from_part = from_part.trim();
+        let data_rows: Box<dyn Iterator<Item = &'a str>> = if from_part.ends_with("stdin;") {
+            Box::new(lines.take_while(|&l| l != r"\."))
+        } else {
+            unreachable!();
+            // TODO: parse filename
+            let filename = "$$PATH$$/3408.dat";
+            let filename = filename.replace("$$PATH$$", ".");
+            let content = fs::read_to_string(filename)?;
+
+            Box::new(content.lines())
+        };
+
         let txn = self.connection.transaction()?;
         let mut prepared_insert = txn.prepare(&stmt)?;
 
-        let data_rows = lines.take_while(|&l| l != r"\.").map(|entry| {
+        let data_rows = data_rows.map(|entry| {
             entry
                 .split("\t")
                 // TODO: map on dependant type

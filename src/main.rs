@@ -11,8 +11,8 @@ struct Cli {
 fn main() -> Result<()> {
     let args = Cli::parse();
     // TODO: don't read the whole file but use an buffered line interator
-    let content = fs::read_to_string(args.pgdump_filename).unwrap();
-    let mut import_op = pgdump2sqlite::ImportOp::new(args.sqlite_filename);
+    let content = fs::read_to_string(args.pgdump_filename)?;
+    let mut import_op = pgdump2sqlite::ImportOp::new(args.sqlite_filename)?;
 
     println!("start");
 
