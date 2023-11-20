@@ -1,0 +1,57 @@
+// tokens might be separated by spaces
+WHITESPACE = _{ " " | NEWLINE }
+_COMMENT   = @{ "--" ~ (!NEWLINE ~ ANY)* }
+COMMENT    = _{ _COMMENT }
+
+// -- literal values
+// TODO: remove x_val and x_inner wrappers that yields these 2 >>
+// quoted values
+quoted_inner = @{ (!PEEK ~ ANY)+ }
+quoted_val   = ${ PUSH("\"" | "'") ~ quoted_inner ~ POP }
+
+// bracketed values (same as quotes)
+bracketed_inner = @{ (!("[" | "]") ~ ANY)+ }
+bracketed_val   = ${ "[" ~ bracketed_inner ~ "]" }
+
+// unquoted values
+unquoted_val = ${ (ASCII_ALPHA | "_")+ }
+
+value = @{ unquoted_val | bracketed_val | quoted_val }
+
+// -- table values
+// TODO: support schema.
+schema_name = ${ value ~ "." }
+table_name  =  { value }
+table_def   = ${ schema_name? ~ table_name }
+
+// -- column values
+column_leftovers = { (!("," | ")") ~ ANY)+ }
+column_name      = { value }
+// will match schemas but this is not a problem because in that case we won't use it
+column_type = @{ (ASCII_ALPHA | "." | "_")+ }
+
+// TODO: silently consume these without producing tokens
+braces_inner    = @{ (!")" ~ ANY)* }
+type_descriptor = @{ (ASCII_ALPHANUMERIC+ ~ ("(" ~ braces_inner ~ ")")?) | (value ~ "::" ~ column_type) }
+type_left       =  { type_descriptor* }
+
+column_def = { column_name ~ column_type ~ type_left }
+
+// -- statements
+table_fields       = { (column_def ~ ",")* ~ column_def }
+create_table_stmnt = {
+    ^"create" ~ ^"table" ~ table_def ~ ("(" ~ table_fields ~ ")")
+}
+
+column_names = { (column_name ~ ",")* ~ column_name }
+from_val     = { value }
+copy_stmnt   = {
+    ^"copy" ~ table_def ~ ("(" ~ column_names ~ ")") ~ (^"from" ~ from_val)
+}
+
+// any_statement or copy_data
+unsupported = { (!(";" | "\\.") ~ ANY)* ~ (";" | "\\.") }
+
+statement = _{ ((create_table_stmnt | copy_stmnt) ~ ";") | unsupported }
+
+main = _{ SOI ~ statement+ ~ EOI }

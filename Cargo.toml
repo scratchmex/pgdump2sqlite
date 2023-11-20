@@ -16,5 +16,7 @@ keywords = ["postgresql", "sqlite", "dump"]
 anyhow = "1.0.75"
 clap = { version = "4.4.8", features = ["derive"] }
 itertools = "0.11.0"
+pest = "2.7.5"
+pest_derive = "2.7.5"
 rusqlite = { version = "0.30.0", features = ["bundled"] }
 thiserror = "1.0.50"
