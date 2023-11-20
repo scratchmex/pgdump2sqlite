@@ -33,9 +33,10 @@ fn parse_value(pair: Pair<Rule>) -> Result<String> {
 #[derive(Debug, PartialEq)]
 pub enum ColumnType {
     Integer,
-    String,
+    Text,
     Boolean,
-    Real, // 8-byte floating number
+    Real,    // 8-byte floating number
+    Unknown, // kind of "any", fallback for any not supported dtypes
 }
 
 pub struct Column {
@@ -64,7 +65,8 @@ fn parse_column_def(pair: Pair<Rule>) -> Result<Column> {
             "integer" => ColumnType::Integer,
             "boolean" => ColumnType::Boolean,
             "double" => ColumnType::Real,
-            _ => ColumnType::String,
+            "text" => ColumnType::Text,
+            _ => ColumnType::Unknown,
         },
     })
 }
@@ -182,6 +184,7 @@ turn public.session_turn_enum NOT NULL,
 role public.user_role_enum DEFAULT 'other'::public.user_role_enum NOT NULL,
 active boolean NOT NULL,
 number double,
+some_text text,
 "userId" integer
 );
 "#;
@@ -202,18 +205,28 @@ number double,
 
         assert_eq!(
             create_table.columns.iter().map(|x| &x.name).collect_vec(),
-            ["id", "date", "turn", "role", "active", "number", "userId"]
+            [
+                "id",
+                "date",
+                "turn",
+                "role",
+                "active",
+                "number",
+                "some_text",
+                "userId"
+            ]
         );
 
         assert_eq!(
             create_table.columns.iter().map(|x| &x.dtype).collect_vec(),
             [
                 &ColumnType::Integer,
-                &ColumnType::String,
-                &ColumnType::String,
-                &ColumnType::String,
+                &ColumnType::Unknown,
+                &ColumnType::Unknown,
+                &ColumnType::Unknown,
                 &ColumnType::Boolean,
                 &ColumnType::Real,
+                &ColumnType::Text,
                 &ColumnType::Integer
             ]
         );

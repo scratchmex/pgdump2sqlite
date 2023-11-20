@@ -2,7 +2,8 @@ mod parser;
 
 use std::{
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
+    vec,
 };
 
 use anyhow::{ensure, Context, Ok, Result};
@@ -15,12 +16,35 @@ enum DumpContext<P: AsRef<std::path::Path>> {
     Tar { tar_filepath: P },
 }
 
+fn get_file_as_string_from_tar<P: AsRef<std::path::Path>>(
+    tar_file: P,
+    filename: &'_ str,
+) -> Result<String> {
+    let mut archive = tar::Archive::new(File::open(tar_file)?);
+    let mut restore_sql = archive
+        .entries()
+        .context("getting tar entries")?
+        .filter_map(|e| e.ok())
+        .filter(|x| x.path().unwrap().to_str().unwrap() == filename)
+        .next()
+        .expect(&format!("{} file in the tar", filename));
+
+    let mut input = String::new();
+    restore_sql
+        .read_to_string(&mut input)
+        .context(format!("reading {} file as string", filename))?;
+
+    Ok(input)
+}
+
 impl parser::ColumnType {
     fn to_sqlite_type(&self) -> &'_ str {
         match self {
             parser::ColumnType::Integer => "integer",
-            parser::ColumnType::String => "text",
+            parser::ColumnType::Text => "text",
             parser::ColumnType::Boolean => "integer",
+            parser::ColumnType::Real => "real",
+            parser::ColumnType::Unknown => "",
         }
     }
 }
@@ -83,7 +107,7 @@ fn get_rows_for_copy<P: AsRef<std::path::Path>>(
         anyhow::bail!("not a copy stmt");
     };
 
-    match dump_context {
+    let rows = match dump_context {
         DumpContext::Plain { sql_filepath } => {
             ensure!(
                 stmt.from.to_lowercase() == "stdin",
@@ -104,7 +128,7 @@ fn get_rows_for_copy<P: AsRef<std::path::Path>>(
 
             // TODO: failable stream of lines
             // -> impl IntoIterator<Item = Vec<&'a str>>
-            let data = reader
+            reader
                 .lines()
                 .map(|x| x.unwrap())
                 .take_while(|x| x != r"\.")
@@ -116,12 +140,51 @@ fn get_rows_for_copy<P: AsRef<std::path::Path>>(
                         })
                         .collect_vec()
                 })
-                .collect_vec();
-
-            Ok(data)
+                .collect_vec()
         }
-        DumpContext::Tar { tar_filepath } => todo!(),
-    }
+        DumpContext::Tar { tar_filepath } => {
+            if stmt.from.to_lowercase() == "stdin" {
+                println!("warning: we don't support copy from stdin for tar dump and we have one, skipping it");
+
+                vec![]
+            } else {
+                let data = get_file_as_string_from_tar(
+                    tar_filepath,
+                    stmt.from.strip_prefix("$$PATH$$/").expect(&format!(
+                        "{} from path should have the $$PATH$$ prefix",
+                        stmt.from
+                    )),
+                )?;
+
+                data.lines()
+                    .take_while(|&x| x != r"\.")
+                    .map(|l| {
+                        l.split('\t')
+                            .map(|v| match v {
+                                r"\N" => None,
+                                _ => Some(v.to_owned()),
+                            })
+                            .collect_vec()
+                    })
+                    .collect_vec()
+            }
+        }
+    };
+
+    // TODO: cast the two iterators ^^ to a common one so we can do this without repeating code
+    // let rows = lines
+    //     .take_while(|x| x != r"\.")
+    //     .map(|l| {
+    //         l.split('\t')
+    //             .map(|v| match v {
+    //                 r"\N" => None,
+    //                 _ => Some(v.to_owned()),
+    //             })
+    //             .collect_vec()
+    //     })
+    //     .collect_vec();
+
+    Ok(rows)
 }
 fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
     stmts: Vec<&Statement>,
@@ -169,7 +232,9 @@ pub fn import_from_file<P: AsRef<std::path::Path>>(file: P, sqlite_path: P) -> R
         DumpContext::Plain { sql_filepath: file } => {
             std::fs::read_to_string(&file).context("reading sql file")?
         }
-        DumpContext::Tar { tar_filepath: file } => todo!(),
+        DumpContext::Tar { tar_filepath: file } => {
+            get_file_as_string_from_tar(file, "restore.sql")?
+        }
     };
 
     let stmts = parser::parse_dump(&input).context("parsing dump")?;
