@@ -111,9 +111,11 @@ pub struct CopyTable {
     pub name: String,
     pub columns: Vec<String>,
     pub from: String,
+    pub end: usize,
 }
 
 fn parse_copy_stmt(pair: Pair<Rule>) -> Result<CopyTable> {
+    let span = pair.as_span();
     let mut pair_inner = pair.into_inner();
 
     let table_def = pair_inner.next().expect("table_def");
@@ -131,8 +133,9 @@ fn parse_copy_stmt(pair: Pair<Rule>) -> Result<CopyTable> {
 
     Ok(CopyTable {
         name: table_name,
-        columns: columns,
+        columns,
         from,
+        end: span.end(),
     })
 }
 
@@ -194,20 +197,12 @@ active boolean NOT NULL,
         assert_eq!(create_table.name, "session");
 
         assert_eq!(
-            create_table
-                .columns
-                .iter()
-                .map(|x| &x.name)
-                .collect_vec(),
+            create_table.columns.iter().map(|x| &x.name).collect_vec(),
             ["id", "date", "turn", "role", "active", "userId"]
         );
 
         assert_eq!(
-            create_table
-                .columns
-                .iter()
-                .map(|x| &x.dtype)
-                .collect_vec(),
+            create_table.columns.iter().map(|x| &x.dtype).collect_vec(),
             [
                 &ColumnType::Integer,
                 &ColumnType::String,
@@ -266,6 +261,8 @@ active boolean NOT NULL,
         );
 
         assert_eq!(copy_table.from, "$$PATH$$/3399.dat");
+
+        assert!(copy_table.end != 0);
 
         Ok(())
     }
