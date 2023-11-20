@@ -66,6 +66,7 @@ fn create_tables_in_sqlite<P: AsRef<std::path::Path>>(
     let txn = conn.transaction()?;
 
     for ref sql_stmt in sql_stmts {
+        println!("{sql_stmt}");
         txn.execute(sql_stmt, ())?;
     }
 
@@ -133,6 +134,7 @@ fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
 
     for stmt in stmts {
         let sql_stmt = stmt_to_sql(stmt)?;
+        println!("{sql_stmt}");
         let mut rows_affected = 0;
 
         let txn = conn.transaction()?;
@@ -152,8 +154,10 @@ fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
 pub fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path: P) -> Result<()> {
     let input = std::fs::read_to_string(&sql_file).context("reading sql file")?;
 
+    println!("parsing dump");
     let stmts = parser::parse_dump(&input).context("parsing dump")?;
 
+    println!("creating tables");
     create_tables_in_sqlite(
         stmts
             .iter()
@@ -162,6 +166,7 @@ pub fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path:
         &sqlite_path,
     )?;
 
+    println!("inserting data");
     insert_data_in_sqlite(
         stmts
             .iter()
@@ -172,13 +177,6 @@ pub fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path:
         },
         &sqlite_path,
     )?;
-
-    // context
-    // dump type
-    //
-
-    let sql_stmts = stmts.iter().map(stmt_to_sql).collect::<Result<Vec<_>>>()?;
-    println!("{:?}", sql_stmts.iter().format("\n"));
 
     Ok(())
 }

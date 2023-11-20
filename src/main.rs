@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use std::fs;
+use pgdump2sqlite::import_from_sql_file;
 
 #[derive(clap::Parser)]
 struct Cli {
@@ -11,12 +11,8 @@ struct Cli {
 fn main() -> Result<()> {
     let args = Cli::parse();
     // TODO: don't read the whole file but use an buffered line interator
-    let content = fs::read_to_string(args.pgdump_filename)?;
-    let mut import_op = pgdump2sqlite::ImportOp::new(args.sqlite_filename)?;
 
-    println!("start");
-
-    import_op.parse(content)?;
+    import_from_sql_file(args.pgdump_filename, args.sqlite_filename)?;
 
     Ok(())
 }
