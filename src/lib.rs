@@ -1,205 +1,72 @@
 mod parser;
 
-use std::fs;
-
-use anyhow::Result;
+use anyhow::{Context, Ok, Result};
 use itertools::Itertools;
+use parser::Statement;
 use rusqlite;
 
-pub struct ImportOp {
-    connection: rusqlite::Connection,
+enum DumpFormat {
+    Plain { sql_filepath: String },
+    Tar { tar_filepath: String },
 }
 
-impl ImportOp {
-    pub fn new<P: AsRef<std::path::Path>>(sqlite_filename: P) -> Result<Self> {
-        let connection = rusqlite::Connection::open(sqlite_filename)?;
-
-        Ok(ImportOp { connection })
-    }
-
-    pub fn parse(&mut self, content: String) -> Result<()> {
-        let mut lines = content.lines().peekable();
-
-        while let Some(&lpeak) = lines.by_ref().peek() {
-            if lpeak.starts_with("--") || lpeak.is_empty() {
-                lines.next();
-                continue;
-            }
-
-            let fragment = lines
-                .by_ref()
-                .take_while_inclusive(|l| !l.ends_with(";"))
-                .collect::<String>();
-
-            if fragment.to_lowercase().starts_with("create table") {
-                self.create_table(&fragment)?;
-            } else if fragment.to_lowercase().starts_with("copy") {
-                self.copy_to_table(&fragment, lines.by_ref())?;
-            } else {
-                // println!("skipping {:?}", fragment);
-                continue;
-            }
+impl parser::ColumnType {
+    fn to_sqlite_type(&self) -> &'_ str {
+        match self {
+            parser::ColumnType::Integer => "integer",
+            parser::ColumnType::String => "text",
+            parser::ColumnType::Boolean => "integer",
         }
-
-        Ok(())
     }
+}
 
-    fn create_table(&self, fragment: &String) -> Result<()> {
-        // "strip" the 'create table' statement
-        let mut it = fragment
-            .chars()
-            .skip("create table".len())
-            .skip_while(|c| c.is_whitespace())
-            .peekable();
-
-        // table name
-        let table_name: String = it
-            .by_ref()
-            .take_while(|c| !c.is_whitespace())
-            // strip ticks or []
-            .filter(|c| !['\'', '"', '[', ']'].contains(&c))
-            .collect();
-
-        // println!("table name: {:?}", table_name);
-
-        it.by_ref()
-            .take_while(|&c| c.is_whitespace())
-            .take_while(|&c| c == '(')
-            .for_each(drop);
-
-        // col names
-        let mut col_names = Vec::<String>::new();
-        while let Some(&cpeak) = it.peek() {
-            // skip spaces
-            if cpeak.is_whitespace() {
-                it.next();
-                continue;
-            }
-
-            // take until a new space
-            let col_name: String = it
-                .by_ref()
-                .take_while(|c| !c.is_whitespace())
-                // strip ticks or []
-                .filter(|c| !['\'', '"', '[', ']'].contains(&c))
-                .collect();
-
-            // skip until comma or end of statement, this is the type def
-            // TODO: add typedef to schema
-            let _type: String = it.by_ref().take_while(|&c| c != ',').collect();
-
-            // println!("{:?} has type {:?}", col_name, _type);
-
-            col_names.push(col_name);
+fn stmt_to_sql(stmt: &Statement) -> Result<String> {
+    let sql_stmt = match stmt {
+        Statement::CreateTable(ct) => {
+            format!(
+                "create table [{}] ( {} )",
+                ct.name,
+                ct.columns
+                    .iter()
+                    .map(|x| (&x.name, x.dtype.to_sqlite_type()))
+                    .map(|(s, d)| format!("[{s} {d}]"))
+                    .join(", ")
+            )
         }
-
-        // println!("col_names: {:?}", col_names);
-
-        // create table [{tablename}] ( [{col1}], [{col2}], ... )
-        let stmt = format!(
-            "create table [{table_name}] ( {} )",
-            col_names.iter().map(|c| format!("[{}]", c)).join(", ")
-        );
-        println!("{stmt:?}");
-
-        self.connection.execute(&stmt, ())?;
-
-        Ok(())
-    }
-
-    fn copy_to_table<'a>(
-        &mut self,
-        fragment: &String,
-        lines: &mut impl Iterator<Item = &'a str>,
-    ) -> Result<()> {
-        /*
-        COPY <table_name> (<cols, >) FROM stdin;
-        <d1\t...>
-        \.
-
-        COPY <table_name> (<cols, >) FROM '$$PATH$$/<file>.dat';
-        */
-
-        // "strip" the copy statement
-        let mut it = fragment.chars().skip("copy".len()).peekable();
-
-        // extract table name
-        let table_name = it
-            .by_ref()
-            .take_while(|&c| c != '(')
-            .filter(|c| !['\'', '"', '[', ']'].contains(&c))
-            .collect::<String>();
-        let table_name = table_name.trim();
-
-        // println!("table name: {:?}", table_name);
-
-        // we parse the cols from statement be aware of the col order
-        let col_names = it
-            .by_ref()
-            .take_while(|&c| c != ')')
-            .collect::<String>()
-            .split(",")
-            .map(|c| c.trim())
-            .map(|c| {
-                c.chars()
-                    .filter(|c| !['\'', '"', '[', ']'].contains(&c))
-                    .collect()
-            })
-            .collect::<Vec<String>>();
-
-        // println!("ncols: {}", col_names.len());
-
-        // insert into [{table_name}] ( [{col1}], [{col2}], ... ) values ( ?, ?, ... )
-        let stmt = format!(
-            "insert into [{table_name}] ( {} ) values ( {} )",
-            col_names.iter().map(|c| format!("[{}]", c)).join(", "),
-            std::iter::repeat("?").take(col_names.len()).join(", ")
-        );
-        println!("{stmt:?}");
-
-        // read from stdin or file
-        let from_part = it.collect::<String>();
-        let from_part = from_part.trim();
-        let data_rows: Box<dyn Iterator<Item = &'a str>> = if from_part.ends_with("stdin;") {
-            Box::new(lines.take_while(|&l| l != r"\."))
-        } else {
-            unreachable!();
-            // TODO: parse filename
-            let filename = "$$PATH$$/3408.dat";
-            let filename = filename.replace("$$PATH$$", ".");
-            let content = fs::read_to_string(filename)?;
-
-            Box::new(content.lines())
-        };
-
-        let txn = self.connection.transaction()?;
-        let mut prepared_insert = txn.prepare(&stmt)?;
-
-        let data_rows = data_rows.map(|entry| {
-            entry
-                .split("\t")
-                // TODO: map on dependant type
-                .map(|e| match e {
-                    r"\N" => None,
-                    // "f" => Some("false"),
-                    // "t" => Some("true"),
-                    _ => Some(e),
-                })
-                .collect::<Vec<_>>()
-        });
-
-        // TODO: print first row
-        // println!("data rows: {:?}", data_rows.get(0));
-
-        let mut rows_affected = 0;
-        for row in data_rows {
-            rows_affected += prepared_insert.execute(rusqlite::params_from_iter(row))?;
+        Statement::Copy(ct) => {
+            format!(
+                "insert into [{}] ( {} ) values ( {} )",
+                ct.name,
+                ct.columns.iter().map(|c| format!("[{c}]")).join(", "),
+                std::iter::repeat("?").take(ct.columns.len()).join(", ")
+            )
         }
-        println!("^^ rows affected: {rows_affected}");
+    };
 
-        drop(prepared_insert);
-        txn.commit()?;
+    Ok(sql_stmt)
+}
 
+fn import_from_sql_file<P: AsRef<std::path::Path>>(sql_file: P, sqlite_path: P) -> Result<()> {
+    let input = std::fs::read_to_string(sql_file).context("reading sql file")?;
+
+    let stmts = parser::parse_dump(&input).context("parsing dump")?;
+
+    let sql_stmts = stmts.iter().map(stmt_to_sql).collect::<Result<Vec<_>>>()?;
+
+    println!("{:?}", sql_stmts.iter().format("\n"));
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_import_from_sql_file_works() -> Result<()> {
+        import_from_sql_file("restore.sql", "")?;
+
+        assert!(false);
         Ok(())
     }
 }
