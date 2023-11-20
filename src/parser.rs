@@ -35,6 +35,7 @@ pub enum ColumnType {
     Integer,
     String,
     Boolean,
+    Real, // 8-byte floating number
 }
 
 pub struct Column {
@@ -62,6 +63,7 @@ fn parse_column_def(pair: Pair<Rule>) -> Result<Column> {
         dtype: match column_type {
             "integer" => ColumnType::Integer,
             "boolean" => ColumnType::Boolean,
+            "double" => ColumnType::Real,
             _ => ColumnType::String,
         },
     })
@@ -179,6 +181,7 @@ date timestamp without time zone DEFAULT now() NOT NULL,
 turn public.session_turn_enum NOT NULL,
 role public.user_role_enum DEFAULT 'other'::public.user_role_enum NOT NULL,
 active boolean NOT NULL,
+number double,
 "userId" integer
 );
 "#;
@@ -199,7 +202,7 @@ active boolean NOT NULL,
 
         assert_eq!(
             create_table.columns.iter().map(|x| &x.name).collect_vec(),
-            ["id", "date", "turn", "role", "active", "userId"]
+            ["id", "date", "turn", "role", "active", "number", "userId"]
         );
 
         assert_eq!(
@@ -210,6 +213,7 @@ active boolean NOT NULL,
                 &ColumnType::String,
                 &ColumnType::String,
                 &ColumnType::Boolean,
+                &ColumnType::Real,
                 &ColumnType::Integer
             ]
         );
