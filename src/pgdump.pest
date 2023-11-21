@@ -25,7 +25,6 @@ table_name  =  { value }
 table_def   = ${ schema_name? ~ table_name }
 
 // -- column values
-column_leftovers = { (!("," | ")") ~ ANY)+ }
 column_name      = { value }
 // will match schemas but this is not a problem because in that case we won't use it
 column_type = @{ (ASCII_ALPHA | "." | "_")+ }
