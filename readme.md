@@ -33,7 +33,7 @@ for me, using a 16 MB tar dump with 39 tables and ~500K rows it takes 0.4 second
 
 1. use the [pest parser](https://github.com/pest-parser/pest) to get the statements
 2. create all the tables
-3. insert the data from the tar or sql file using prepared insert (for speed) and 
+3. insert the data from the tar or sql file using prepared insert a transaction per table (for speed)
 
 ## support
 - `create table` instruction
@@ -45,6 +45,7 @@ for me, using a 16 MB tar dump with 39 tables and ~500K rows it takes 0.4 second
 
 check the `// TODO:` comments
 
+- support `insert into` statement (even tough this is not the default behavior and it takes much more space, don't do it)
 - parse with pest using a buffer. see [pest: Support for streaming input](https://github.com/pest-parser/pest/issues/153)
 - get rows for the copy lazily, don't read the whole file but use a generator (like in python) to return each row (I don't know how to do this)
 - map `f` and `t` values to `0` and `1` in Bool dtype

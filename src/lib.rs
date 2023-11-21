@@ -186,6 +186,7 @@ fn get_rows_for_copy<P: AsRef<std::path::Path>>(
 
     Ok(rows)
 }
+
 fn insert_data_in_sqlite<P: AsRef<std::path::Path>>(
     stmts: Vec<&Statement>,
     dump_context: &DumpContext<P>,
