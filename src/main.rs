@@ -6,6 +6,7 @@ use pgdump2sqlite::import_from_file;
 
 #[derive(clap::Parser)]
 struct Cli {
+    #[arg(help = "the file of the dump. can be .sql or .tar")]
     pgdump_filename: std::path::PathBuf,
     sqlite_filename: std::path::PathBuf,
     #[arg(
