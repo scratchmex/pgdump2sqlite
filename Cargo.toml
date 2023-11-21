@@ -1,6 +1,6 @@
 [package]
 name = "pgdump2sqlite"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Ivan Gonzalez"]
 description = "use a pgdump to create a sqlite db"
