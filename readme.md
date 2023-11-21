@@ -1,6 +1,6 @@
 # pgdump2sqlite
 
-![crates.io](https://img.shields.io/crates/v/pgdump2sqlite.svg)
+[![crates.io](https://img.shields.io/crates/v/pgdump2sqlite.svg)](https://crates.io/crates/pgdump2sqlite)
 
 use a [pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html) to create a sqlite db
 
