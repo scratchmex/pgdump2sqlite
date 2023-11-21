@@ -272,7 +272,6 @@ mod tests {
     fn test_import_from_sql_file_works() -> Result<()> {
         import_from_file("dump.sql", "test.db")?;
 
-        assert!(false);
-        Ok(())
+        todo!();
     }
 }
